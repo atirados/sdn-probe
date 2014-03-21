@@ -1,0 +1,1 @@
+Sonda basada en pyretic para deteccion en tiempo real de conexion y desconexion de dispositivos en red
