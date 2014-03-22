@@ -1,7 +1,7 @@
 
 ################################################################################
 #                                                                              #
-# sondav1.py                                                                   #
+# sondav2.py                                                                   #
 # Author: Adrian Tirados                                                       #
 #                                                                              #
 ################################################################################
@@ -26,7 +26,15 @@
 #    - Hora de conexion/desconexion                                            #
 #    - Importancia del activo                                                  #
 #                                                                              #
+#   Con cada desconexion, el controlador registra este evento en la base       #
+# de datos, actualizando el estado de la maquina y la hora del evento.         #
+#                                                                              #
+#   Por otra parte, el switch es sensible a movilidad entre subredes,          #
+# registrando de igual manera estas circunstancias.                            #
 ################################################################################
+
+
+# Importar dependencias
 
 from pyretic.lib.corelib import *
 from pyretic.lib.std import *
@@ -35,20 +43,29 @@ import MySQLdb as mdb
 import sys
 import datetime
 
-hosts = {}  # Variable global que almacena los hosts que se conectan
-n_packets = {}
+# Declaracion de variables globales
 
-class mac_learner(DynamicPolicy):
-    """Standard MAC-learning logic"""
+hosts = {}  # Almacena los hosts que se conectan {MAC, IP}
+n_packets = {}  # Almacena el numero de paquetes para cada host {MAC, Packets}
+
+class probe(DynamicPolicy):
+    """
+    Clase que describe un switch con capacidad de autoaprendizaje. Adicionalmente, cuenta con
+    funciones que detectan la conexion y desconexion de hosts, guardando dinamicamente la 
+    informacion en una base de datos remota.
+    """
     def __init__(self):
-        super(mac_learner,self).__init__()
-        self.flood = flood()           # REUSE A SINGLE FLOOD INSTANCE
+        """
+        Metodo constructor que declara el estado inicial del switch.
+        """
+        super(probe,self).__init__()
+        self.flood = flood()    # Flow Table vacia: inundar la red
         self.set_initial_state()
 
     def set_initial_state(self):
-        self.query = packets(None,['srcmac','switch'])
-        self.query.register_callback(self.learn_new_MAC)
-        self.forward = self.flood  # REUSE A SINGLE FLOOD INSTANCE
+        self.query = packets(None,['srcmac','switch'])  # Query que detecta paquetes segun el match indicado
+        self.query.register_callback(self.learn_new_MAC)    # Registro del callback
+        self.forward = self.flood
         self.update_policy()
 
     def set_network(self,network):
@@ -190,4 +207,4 @@ def packet_counts():
         
 def main():
     return (packet_counts() +
-            mac_learner())
+            probe())
