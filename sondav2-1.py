@@ -1,36 +1,40 @@
+#!/usr/bin/python
+# -*- coding: utf-8 -*-
 
 ################################################################################
 #                                                                              #
 # sondav2.py                                                                   #
-# Author: Adrian Tirados                                                       #
+# Author: Adrián Tirados                                                       #
 #                                                                              #
 ################################################################################
 #                                                                              #
-# Sonda de deteccion automatica de dispositivos en red.                        #
+# Sonda de detección automática de dispositivos en red.                        #
 #                                                                              #
 #    La sonda es un controlador remoto de un switch basado en Open vSwitch,    #
-# un switch virtual con soporte de OpenFlow. Dicho controlador esta            #
+# un switch virtual con soporte de OpenFlow. Dicho controlador está            #
 # implementado en Pyretic, un Northbound API sobre POX. Los elementos del      #
 # escenario de la red se encuentran virtualizados mediante vnx.                #
 #                                                                              #
-#    Funcionamiento: El controlador actua como un switch con autoaprendizaje,  #
-# de manera que construye de manera dinamica sus politicas de red y las        #
+#    Funcionamiento: El controlador actúa como un switch con autoaprendizaje,  #
+# de manera que construye de manera dinámica sus políticas de red y las        #
 # registra en las Flow Tables. Por otra parte, cuenta con la funcionalidad     #
 # de almacenar en una base de datos a tiempo real los diferentes hosts que     #
-# se conectan a la red. Con cada nueva conexion, el controlador almacena en    #
+# se conectan a la red. Con cada nueva conexión, el controlador almacena en    #
 # la DB mediante API MySQLdb los siguientes valores:                           #
-#    - Estado de la maquina                                                    #
-#    - Direccion MAC                                                           #
-#    - Direccion IP                                                            #
+#    - Estado de la máquina                                                    #
+#    - Dirección MAC                                                           #
+#    - Dirección IP                                                            #
 #    - Puerto de entrada                                                       #
-#    - Hora de conexion/desconexion                                            #
+#    - Hora de conexión/desconexión                                            #
 #    - Importancia del activo                                                  #
 #                                                                              #
-#   Con cada desconexion, el controlador registra este evento en la base       #
-# de datos, actualizando el estado de la maquina y la hora del evento.         #
+#   Cuando tiene lugar una desconexión, el controlador registra este evento    #
+# en la base de datos, actualizando el estado de la máquina y la hora del      #
+# suceso.                                                                      #
 #                                                                              #
-#   Por otra parte, el switch es sensible a movilidad entre subredes,          #
+#   Adicionalmente, el switch es sensible a movilidad entre subredes,          #
 # registrando de igual manera estas circunstancias.                            #
+#                                                                              #
 ################################################################################
 
 
@@ -43,7 +47,7 @@ import MySQLdb as mdb
 import sys
 import datetime
 
-# Declaracion de variables globales
+# Declaración de variables globales
 
 hosts = {}  # Almacena los hosts que se conectan {MAC, IP}
 n_packets = {}  # Almacena el numero de paquetes para cada host {MAC, Packets}
@@ -51,38 +55,51 @@ n_packets = {}  # Almacena el numero de paquetes para cada host {MAC, Packets}
 class probe(DynamicPolicy):
     """
     Clase que describe un switch con capacidad de autoaprendizaje. Adicionalmente, cuenta con
-    funciones que detectan la conexion y desconexion de hosts, guardando dinamicamente la 
-    informacion en una base de datos remota.
+    funciones que detectan la conexión y desconexión de hosts, guardando dinámicamente la 
+    información en una base de datos remota.
     """
     def __init__(self):
         """
-        Metodo constructor que declara el estado inicial del switch.
+        Función preliminar que actúa como constructor.
         """
         super(probe,self).__init__()
-        self.flood = flood()    # Flow Table vacia: inundar la red
-        self.set_initial_state()
+        self.flood = flood()    # Política flood() predefinida en pyretic. Inunda la red mediante un STP    
+        self.set_initial_state()    # Programar el switch a su estado inicial
 
     def set_initial_state(self):
-        self.query = packets(None,['srcmac','switch'])  # Query que detecta paquetes segun el match indicado
+        """
+        Función que realiza un query de la red y decide políticas en función del tráfico
+        recibido, actualizando finalmente la Flow Table.
+        """
+        self.query = packets(None,['srcmac','switch'])  # Query que detecta paquetes segun una política de match
         self.query.register_callback(self.learn_new_MAC)    # Registro del callback
-        self.forward = self.flood
-        self.update_policy()
+        self.forward = self.flood   # Política por defecto: inundar la red
+        self.update_policy()    # Actualizar políticas del switch
 
     def set_network(self,network):
+        """
+        Función que actualiza el estado de la red
+        """
         self.set_initial_state()
 
     def update_policy(self):
-        """Update the policy based on current forward and query policies"""
-        self.policy = self.forward + self.query
+        """
+        Función que actualiza las políticas del switch basado en el valor de la política 
+        forward y las políticas de la query.
+        """
+        self.policy = self.forward + self.query     # Composición paralela de políticas
 
     def learn_new_MAC(self,pkt):
-        """Update forward policy based on newly seen (mac,port)"""
-        self.forward = if_(match(dstmac=pkt['srcmac'],
-                                switch=pkt['switch']),
-                          fwd(pkt['inport']),
-                          self.forward) 
-        self.update_policy()
-        self.save(pkt)
+        """
+        Función que actualiza la política forward basada en la detección de una nueva
+        dirección MAC en un paquete que recibe el switch en un puerto determinado.
+        """
+        self.forward = if_(match(dstmac=pkt['srcmac'],  # En función de las políticas de match,
+                                switch=pkt['switch']),  # el switch es capaz de reenviar el paquete
+                          fwd(pkt['inport']),           # por el puerto origen, creando una nueva política
+                          self.forward)                 # En caso contrario, se ejecuta la política forward
+        self.update_policy()    # Actualizar la políticas del switch
+        self.save(pkt)      # Guardar la información en la base de datos
 
     def save(self,pkt):
         """Comprueba si el host se encuentra en la lista, y en caso negativo, lo almacena"""
