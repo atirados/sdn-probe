@@ -102,23 +102,31 @@ class probe(DynamicPolicy):
         self.save(pkt)      # Guardar la información en la base de datos
 
     def save(self,pkt):
-        """Comprueba si el host se encuentra en la lista, y en caso negativo, lo almacena"""
-        item = pkt['srcmac']
-        if not item in hosts.keys():
-            hosts[item] = str(pkt['srcip'])
-            self.store_db(pkt)
+        """
+        Función que comprueba si un host se encuentra en el diccionario.
+        Si el host se encuentra en el diccionario, actualiza su estado a ON, ya que ha vuelto
+        a conectarse a la red.
+        En caso negativo, lo almacena en el diccionario y en la base de datos.
+        """
+        item = pkt['srcmac']    # Elemento que contiene la MAC del paquete
+        if not item in hosts.keys():            # Si el elemento no esta en el diccionario,
+            hosts[item] = str(pkt['srcip'])     # almacena su par {MAC, IP}
+            self.store_db(pkt)                  # y lo guarda en la base de datos
             print('Nuevo host detectado: ' + str(item) + ' -- Guardado en DB')
-        else:
-            self.set_on(pkt)
-            print('Host ' +  str(item) + ' -- Actualizado a ON')
+        else:                                   # Si ya estaba en el diccionario,
+            self.set_on(pkt)                    # actualiza el estado a ON
+            print('Host ' +  str(item) + ' se ha reconectado -- Actualizado a ON')
 
     def store_db(self,pkt):
-        """Cuando hay un host nuevo en la red, guarda sus parametros en la base de datos"""
+        """
+        Función que recibe un paquete determinado y extrae los parámetros relevantes para
+        guardarlos en la base de datos.
+        """
         try:
-            con = mdb.connect('localhost', 'root', 'mysqlpass', 'sonda');
-
-            cur = con.cursor()
+            con = mdb.connect('localhost', 'root', 'mysqlpass', 'sonda');   # Conexión con la base de datos
+            cur = con.cursor()  # Creación del cursor
             
+            # Creación de parámetros de la tabla
             state = 'on'
             mac_addr = str(pkt['srcmac'])
             ip_addr = str(pkt['srcip'])
@@ -126,21 +134,24 @@ class probe(DynamicPolicy):
             time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             value = 'Medio'
 
+            # Sentencia SQL
             sql = "INSERT INTO HOSTS(Estado, MAC, IP, Puerto, Hora, Importancia) \
                     VALUES ('%s', '%s', '%s', '%d', '%s', '%s')" \
                     % (state, mac_addr, ip_addr, port, time, value)
 
+            # Ejecución de la sentencia y commit
             cur.execute(sql)
             con.commit()
 
         except mdb.Error, e:
-            db.rollback()
+            print "Error %d: %s" % (e.args[0], e.args[1])
+            db.rollback()   # Rollback de la base de datos en caso de excepción
 
         finally:         
             if con:    
-                con.close()
+                con.close() # Cerrar la conexión
 
-    def set_on(self,pkt):  # No funciona (???)
+    def set_on(self,pkt):
         """Actualiza el estado de un host a ON"""
         try:
             con = mdb.connect('localhost', 'root', 'mysqlpass', 'sonda');
@@ -150,9 +161,7 @@ class probe(DynamicPolicy):
             state = 'on'
             mac_addr = str(pkt['srcmac'])
             ip_addr = str(pkt['srcip'])
-            port = pkt['inport']
             time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            value = 'Medio'
 
             sql = "UPDATE HOSTS SET Estado = '%s' \
                     WHERE MAC = '%s'" \
