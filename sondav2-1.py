@@ -152,85 +152,110 @@ class probe(DynamicPolicy):
                 con.close() # Cerrar la conexión
 
     def set_on(self,pkt):
-        """Actualiza el estado de un host a ON"""
+        """
+        Función que actualiza en la base de datos el estado de un host a ON
+        """
         try:
-            con = mdb.connect('localhost', 'root', 'mysqlpass', 'sonda');
+            con = mdb.connect('localhost', 'root', 'mysqlpass', 'sonda');   # Conexión con la base de datos
 
-            cur = con.cursor()
+            cur = con.cursor()  # Creación del cursor
             
+            # Creación de parámetros
             state = 'on'
             mac_addr = str(pkt['srcmac'])
             ip_addr = str(pkt['srcip'])
             time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
+            # Sentencia SQL
             sql = "UPDATE HOSTS SET Estado = '%s' \
                     WHERE MAC = '%s'" \
                     % (state, mac_addr)
 
+            # Ejecución de la sentencia y commit
             cur.execute(sql)
             con.commit()
 
         except mdb.Error, e:
-            db.rollback()
+            db.rollback()   # Rollback de la base de datos en caso de excepción
 
         finally:         
             if con:    
-                con.close() 
+                con.close() # Cierra la conexión
 
 
 
 def packet_count_register(counts):
+    """
+    Función que recibe los paquetes que ha contado el switch y los registra en 
+    un diccionario asociado a la dirección MAC de cada host que actúa como contador.
+    """
     print "----counts------"
     print counts
 
-    for host in hosts.keys():
-        if(not host in n_packets.keys()):
-            n_packets[host] = 0
+    for host in hosts.keys():   # Recorrer el diccionario de hosts
+        if(not host in n_packets.keys()):   # Si el host no se encuentra en el diccionario 
+            n_packets[host] = 0             # se añade con el contador a 0
         
-        m = match(srcmac=host)
+        # Creación de una política de match para comparar el origen de los paquetes
+        m = match(srcmac=host)  
 
-        if(m in counts.keys()):
-            if(n_packets.get(host) < counts.get(m)):
+        # Lógica de tratamiento de los contadores de paquetes
+        if(m in counts.keys()):   # Si la política se encuentra en el diccionario generado en el callback
+            if(n_packets.get(host) < counts.get(m)):    # Si el contador es menor al registrado 
                 print('El host con MAC ' +  str(host) + ' e IP ' + hosts.get(host) + ' genera trafico')
-                n_packets[host] = counts.get(m)
-            else:
+                n_packets[host] = counts.get(m)         # actualizar el valor 
+            else:                                       # Si es menor o igual
                 print('El host con MAC ' +  str(host) + ' e IP ' + hosts.get(host) +' no genera trafico')
-                set_off(host)
+                set_off(host)                           # poner el host a estado off
                 print('El host con MAC ' +  str(host) + ' e IP ' + hosts.get(host) +' estado OFF')
-        else:
-            print('El host con MAC ' +  str(host) + ' e IP ' + hosts.get(host) +' no genera trafico')
+        # else:                     # Si por el contrario no se encuentra en el diccionario
+        #     print('El host con MAC ' +  str(host) + ' e IP ' + hosts.get(host) +' no genera trafico')
 
 def set_off(host):
-    """Actualiza el estado de un host a OFF"""
+    """
+    Función que actualiza en la base de datos el estado de un host a OFF
+    """
     try:
-        con = mdb.connect('localhost', 'root', 'mysqlpass', 'sonda');
+        con = mdb.connect('localhost', 'root', 'mysqlpass', 'sonda');   # Conexión con la base de datos
 
-        cur = con.cursor()
+        cur = con.cursor()  # Creación del cursor
         
+        # Creación de parámetros
         state = 'off'
         mac_addr = str(host)
         # ip_addr = hosts.get[host]
         time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
+        # Sentencia SQL
         sql = "UPDATE HOSTS SET Estado = '%s', Hora = '%s' \
                 WHERE MAC = '%s'" \
                 % (state, time, mac_addr)
 
+        # Ejecución de la sentencia y commit
         cur.execute(sql)
         con.commit()
 
     except mdb.Error, e:
-        db.rollback()
+        db.rollback()   # Rollback de la base de datos en caso de excepción
 
     finally:         
         if con:    
-            con.close() 
+            con.close() # Cierra la conexión
 
 def packet_counts():
-  q = count_packets(10,['srcmac'])
-  q.register_callback(packet_count_register)
-  return q
+    """
+    Función que cuenta los paquetes recibidos por el switch mediante un query
+    y llama a un callback cada 10 segundos que se encargará de aplicar lógica 
+    a la información recibida. 
+    """
+    q = count_packets(10,['srcmac'])    # Query que cuenta los paquetes segun la MAC origen    
+    q.register_callback(packet_count_register)  # Callback llamado cada 10 segundos
+    return q
         
 def main():
+    """
+    Función principal que es llamada a la hora de ejecutar el módulo de la sonda
+    con Pyretic.
+    """
     return (packet_counts() +
             probe())
