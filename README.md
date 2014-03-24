@@ -1,1 +1,1 @@
-Sonda basada en pyretic para deteccion en tiempo real de conexion y desconexion de dispositivos en red
+Diseño y desarrollo de una sonda para la detección en tiempo real de conexión y desconexión de dispositivos en red

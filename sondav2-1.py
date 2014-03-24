@@ -1,32 +1,44 @@
+#!/usr/bin/python
+# -*- coding: utf-8 -*-
 
 ################################################################################
 #                                                                              #
-# sondav1.py                                                                   #
-# Author: Adrian Tirados                                                       #
+# sondav2.py                                                                   #
+# Author: Adrián Tirados                                                       #
 #                                                                              #
 ################################################################################
 #                                                                              #
-# Sonda de deteccion automatica de dispositivos en red.                        #
+# Sonda de detección automática de dispositivos en red.                        #
 #                                                                              #
 #    La sonda es un controlador remoto de un switch basado en Open vSwitch,    #
-# un switch virtual con soporte de OpenFlow. Dicho controlador esta            #
+# un switch virtual con soporte de OpenFlow. Dicho controlador está            #
 # implementado en Pyretic, un Northbound API sobre POX. Los elementos del      #
 # escenario de la red se encuentran virtualizados mediante vnx.                #
 #                                                                              #
-#    Funcionamiento: El controlador actua como un switch con autoaprendizaje,  #
-# de manera que construye de manera dinamica sus politicas de red y las        #
+#    Funcionamiento: El controlador actúa como un switch con autoaprendizaje,  #
+# de manera que construye de manera dinámica sus políticas de red y las        #
 # registra en las Flow Tables. Por otra parte, cuenta con la funcionalidad     #
 # de almacenar en una base de datos a tiempo real los diferentes hosts que     #
-# se conectan a la red. Con cada nueva conexion, el controlador almacena en    #
+# se conectan a la red. Con cada nueva conexión, el controlador almacena en    #
 # la DB mediante API MySQLdb los siguientes valores:                           #
-#    - Estado de la maquina                                                    #
-#    - Direccion MAC                                                           #
-#    - Direccion IP                                                            #
+#    - Estado de la máquina                                                    #
+#    - Dirección MAC                                                           #
+#    - Dirección IP                                                            #
 #    - Puerto de entrada                                                       #
-#    - Hora de conexion/desconexion                                            #
+#    - Hora de conexión/desconexión                                            #
 #    - Importancia del activo                                                  #
 #                                                                              #
+#   Cuando tiene lugar una desconexión, el controlador registra este evento    #
+# en la base de datos, actualizando el estado de la máquina y la hora del      #
+# suceso.                                                                      #
+#                                                                              #
+#   Adicionalmente, el switch es sensible a movilidad entre subredes,          #
+# registrando de igual manera estas circunstancias.                            #
+#                                                                              #
 ################################################################################
+
+
+# Importar dependencias
 
 from pyretic.lib.corelib import *
 from pyretic.lib.std import *
@@ -35,56 +47,86 @@ import MySQLdb as mdb
 import sys
 import datetime
 
-hosts = {}  # Variable global que almacena los hosts que se conectan
-n_packets = {}
+# Declaración de variables globales
 
-class mac_learner(DynamicPolicy):
-    """Standard MAC-learning logic"""
+hosts = {}  # Almacena los hosts que se conectan {MAC, IP}
+n_packets = {}  # Almacena el numero de paquetes para cada host {MAC, Packets}
+
+class probe(DynamicPolicy):
+    """
+    Clase que describe un switch con capacidad de autoaprendizaje. Adicionalmente, cuenta con
+    funciones que detectan la conexión y desconexión de hosts, guardando dinámicamente la 
+    información en una base de datos remota.
+    """
     def __init__(self):
-        super(mac_learner,self).__init__()
-        self.flood = flood()           # REUSE A SINGLE FLOOD INSTANCE
-        self.set_initial_state()
+        """
+        Función preliminar que actúa como constructor.
+        """
+        super(probe,self).__init__()
+        self.flood = flood()    # Política flood() predefinida en pyretic. Inunda la red mediante un STP    
+        self.set_initial_state()    # Programar el switch a su estado inicial
 
     def set_initial_state(self):
-        self.query = packets(None,['srcmac','switch'])
-        self.query.register_callback(self.learn_new_MAC)
-        self.forward = self.flood  # REUSE A SINGLE FLOOD INSTANCE
-        self.update_policy()
+        """
+        Función que realiza un query de la red y decide políticas en función del tráfico
+        recibido, actualizando finalmente la Flow Table.
+        """
+        self.query = packets(None,['srcmac','switch'])  # Query que detecta paquetes segun una política de match
+        self.query.register_callback(self.learn_new_MAC)    # Registro del callback
+        self.forward = self.flood   # Política por defecto: inundar la red
+        self.update_policy()    # Actualizar políticas del switch
 
     def set_network(self,network):
+        """
+        Función que actualiza el estado de la red
+        """
         self.set_initial_state()
 
     def update_policy(self):
-        """Update the policy based on current forward and query policies"""
-        self.policy = self.forward + self.query
+        """
+        Función que actualiza las políticas del switch basado en el valor de la política 
+        forward y las políticas de la query.
+        """
+        self.policy = self.forward + self.query     # Composición paralela de políticas
 
     def learn_new_MAC(self,pkt):
-        """Update forward policy based on newly seen (mac,port)"""
-        self.forward = if_(match(dstmac=pkt['srcmac'],
-                                switch=pkt['switch']),
-                          fwd(pkt['inport']),
-                          self.forward) 
-        self.update_policy()
-        self.save(pkt)
+        """
+        Función que actualiza la política forward basada en la detección de una nueva
+        dirección MAC en un paquete que recibe el switch en un puerto determinado.
+        """
+        self.forward = if_(match(dstmac=pkt['srcmac'],  # En función de las políticas de match,
+                                switch=pkt['switch']),  # el switch es capaz de reenviar el paquete
+                          fwd(pkt['inport']),           # por el puerto origen, creando una nueva política
+                          self.forward)                 # En caso contrario, se ejecuta la política forward
+        self.update_policy()    # Actualizar la políticas del switch
+        self.save(pkt)      # Guardar la información en la base de datos
 
     def save(self,pkt):
-        """Comprueba si el host se encuentra en la lista, y en caso negativo, lo almacena"""
-        item = pkt['srcmac']
-        if not item in hosts.keys():
-            hosts[item] = str(pkt['srcip'])
-            self.store_db(pkt)
+        """
+        Función que comprueba si un host se encuentra en el diccionario.
+        Si el host se encuentra en el diccionario, actualiza su estado a ON, ya que ha vuelto
+        a conectarse a la red.
+        En caso negativo, lo almacena en el diccionario y en la base de datos.
+        """
+        item = pkt['srcmac']    # Elemento que contiene la MAC del paquete
+        if not item in hosts.keys():            # Si el elemento no esta en el diccionario,
+            hosts[item] = str(pkt['srcip'])     # almacena su par {MAC, IP}
+            self.store_db(pkt)                  # y lo guarda en la base de datos
             print('Nuevo host detectado: ' + str(item) + ' -- Guardado en DB')
-        else:
-            self.set_on(pkt)
-            print('Host ' +  str(item) + ' -- Actualizado a ON')
+        else:                                   # Si ya estaba en el diccionario,
+            self.set_on(pkt)                    # actualiza el estado a ON
+            print('Host ' +  str(item) + ' se ha reconectado -- Actualizado a ON')
 
     def store_db(self,pkt):
-        """Cuando hay un host nuevo en la red, guarda sus parametros en la base de datos"""
+        """
+        Función que recibe un paquete determinado y extrae los parámetros relevantes para
+        guardarlos en la base de datos.
+        """
         try:
-            con = mdb.connect('localhost', 'root', 'mysqlpass', 'sonda');
-
-            cur = con.cursor()
+            con = mdb.connect('localhost', 'root', 'mysqlpass', 'sonda');   # Conexión con la base de datos
+            cur = con.cursor()  # Creación del cursor
             
+            # Creación de parámetros de la tabla
             state = 'on'
             mac_addr = str(pkt['srcmac'])
             ip_addr = str(pkt['srcip'])
@@ -92,102 +134,128 @@ class mac_learner(DynamicPolicy):
             time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             value = 'Medio'
 
+            # Sentencia SQL
             sql = "INSERT INTO HOSTS(Estado, MAC, IP, Puerto, Hora, Importancia) \
                     VALUES ('%s', '%s', '%s', '%d', '%s', '%s')" \
                     % (state, mac_addr, ip_addr, port, time, value)
 
+            # Ejecución de la sentencia y commit
             cur.execute(sql)
             con.commit()
 
         except mdb.Error, e:
-            db.rollback()
+            print "Error %d: %s" % (e.args[0], e.args[1])
+            db.rollback()   # Rollback de la base de datos en caso de excepción
 
         finally:         
             if con:    
-                con.close()
+                con.close() # Cerrar la conexión
 
-    def set_on(self,pkt):  # No funciona (???)
-        """Actualiza el estado de un host a ON"""
+    def set_on(self,pkt):
+        """
+        Función que actualiza en la base de datos el estado de un host a ON
+        """
         try:
-            con = mdb.connect('localhost', 'root', 'mysqlpass', 'sonda');
+            con = mdb.connect('localhost', 'root', 'mysqlpass', 'sonda');   # Conexión con la base de datos
 
-            cur = con.cursor()
+            cur = con.cursor()  # Creación del cursor
             
+            # Creación de parámetros
             state = 'on'
             mac_addr = str(pkt['srcmac'])
             ip_addr = str(pkt['srcip'])
-            port = pkt['inport']
             time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            value = 'Medio'
 
+            # Sentencia SQL
             sql = "UPDATE HOSTS SET Estado = '%s' \
                     WHERE MAC = '%s'" \
                     % (state, mac_addr)
 
+            # Ejecución de la sentencia y commit
             cur.execute(sql)
             con.commit()
 
         except mdb.Error, e:
-            db.rollback()
+            db.rollback()   # Rollback de la base de datos en caso de excepción
 
         finally:         
             if con:    
-                con.close() 
+                con.close() # Cierra la conexión
 
 
 
 def packet_count_register(counts):
+    """
+    Función que recibe los paquetes que ha contado el switch y los registra en 
+    un diccionario asociado a la dirección MAC de cada host que actúa como contador.
+    """
     print "----counts------"
     print counts
 
-    for host in hosts.keys():
-        if(not host in n_packets.keys()):
-            n_packets[host] = 0
+    for host in hosts.keys():   # Recorrer el diccionario de hosts
+        if(not host in n_packets.keys()):   # Si el host no se encuentra en el diccionario 
+            n_packets[host] = 0             # se añade con el contador a 0
         
-        m = match(srcmac=host)
+        # Creación de una política de match para comparar el origen de los paquetes
+        m = match(srcmac=host)  
 
-        if(m in counts.keys()):
-            if(n_packets.get(host) < counts.get(m)):
+        # Lógica de tratamiento de los contadores de paquetes
+        if(m in counts.keys()):   # Si la política se encuentra en el diccionario generado en el callback
+            if(n_packets.get(host) < counts.get(m)):    # Si el contador es menor al registrado 
                 print('El host con MAC ' +  str(host) + ' e IP ' + hosts.get(host) + ' genera trafico')
-                n_packets[host] = counts.get(m)
-            else:
+                n_packets[host] = counts.get(m)         # actualizar el valor 
+            else:                                       # Si es menor o igual
                 print('El host con MAC ' +  str(host) + ' e IP ' + hosts.get(host) +' no genera trafico')
-                set_off(host)
+                set_off(host)                           # poner el host a estado off
                 print('El host con MAC ' +  str(host) + ' e IP ' + hosts.get(host) +' estado OFF')
-        else:
-            print('El host con MAC ' +  str(host) + ' e IP ' + hosts.get(host) +' no genera trafico')
+        # else:                     # Si por el contrario no se encuentra en el diccionario
+        #     print('El host con MAC ' +  str(host) + ' e IP ' + hosts.get(host) +' no genera trafico')
 
 def set_off(host):
-    """Actualiza el estado de un host a OFF"""
+    """
+    Función que actualiza en la base de datos el estado de un host a OFF
+    """
     try:
-        con = mdb.connect('localhost', 'root', 'mysqlpass', 'sonda');
+        con = mdb.connect('localhost', 'root', 'mysqlpass', 'sonda');   # Conexión con la base de datos
 
-        cur = con.cursor()
+        cur = con.cursor()  # Creación del cursor
         
+        # Creación de parámetros
         state = 'off'
         mac_addr = str(host)
         # ip_addr = hosts.get[host]
         time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
+        # Sentencia SQL
         sql = "UPDATE HOSTS SET Estado = '%s', Hora = '%s' \
                 WHERE MAC = '%s'" \
                 % (state, time, mac_addr)
 
+        # Ejecución de la sentencia y commit
         cur.execute(sql)
         con.commit()
 
     except mdb.Error, e:
-        db.rollback()
+        db.rollback()   # Rollback de la base de datos en caso de excepción
 
     finally:         
         if con:    
-            con.close() 
+            con.close() # Cierra la conexión
 
 def packet_counts():
-  q = count_packets(10,['srcmac'])
-  q.register_callback(packet_count_register)
-  return q
+    """
+    Función que cuenta los paquetes recibidos por el switch mediante un query
+    y llama a un callback cada 10 segundos que se encargará de aplicar lógica 
+    a la información recibida. 
+    """
+    q = count_packets(10,['srcmac'])    # Query que cuenta los paquetes segun la MAC origen    
+    q.register_callback(packet_count_register)  # Callback llamado cada 10 segundos
+    return q
         
 def main():
+    """
+    Función principal que es llamada a la hora de ejecutar el módulo de la sonda
+    con Pyretic.
+    """
     return (packet_counts() +
-            mac_learner())
+            probe())
