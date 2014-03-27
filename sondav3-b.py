@@ -3,7 +3,7 @@
 
 ################################################################################
 #                                                                              #
-# sondav2.py                                                                   #
+# sondav3.py                                                                   #
 # Author: Adrián Tirados                                                       #
 #                                                                              #
 ################################################################################
@@ -49,8 +49,17 @@ import datetime
 
 # Declaración de variables globales
 
-hosts = {}  # Almacena los hosts que se conectan {MAC, IP}
+hosts = {}      # Almacena los hosts que se conectan {MAC, IP}
 n_packets = {}  # Almacena el numero de paquetes para cada host {MAC, Packets}
+switches = {}   # Almacena el switch asociado a cada MAC
+ip_controller = ('127.0.0.1')                   # No utilizada: Dirección localhost. Necesidad de migrar el controlador
+ip1 = IPAddr('10.0.0.101')
+ip2 = IPAddr('10.0.0.102')                      # Necesaria para pruebas hasta que se migre el controlador
+mac_origen_sw = EthAddr('ee:f3:48:30:cf:4f')
+mac_origen_h2 = EthAddr('02:fd:00:05:01:01')    # Necesaria para pruebas hasta que se migre el controlador
+mac_destino = EthAddr('ff:ff:ff:ff:ff:ff')      # ARP broadcast
+network_id = None
+
 
 class probe(DynamicPolicy):
     """
@@ -65,6 +74,7 @@ class probe(DynamicPolicy):
         super(probe,self).__init__()
         self.flood = flood()    # Política flood() predefinida en pyretic. Inunda la red mediante un STP    
         self.set_initial_state()    # Programar el switch a su estado inicial
+        self.network = None
 
     def set_initial_state(self):
         """
@@ -80,7 +90,26 @@ class probe(DynamicPolicy):
         """
         Función que actualiza el estado de la red
         """
-        self.set_initial_state()
+        self.network = network
+
+        print "------------------------SELF-NETWORK--------------------------"
+        print self.network
+
+
+        print "------------------------------ANTES---------------------------"
+        n = get_network_id()
+        print n
+
+        set_network_id(self.network)
+
+
+        print "----------------------------------DESPUES----------------------"
+        n = get_network_id()
+        print n
+
+        #print "------------------------network_id 1--------------------------"
+        #print network_id
+        #print id(network_id)
 
     def update_policy(self):
         """
@@ -111,11 +140,13 @@ class probe(DynamicPolicy):
         item = pkt['srcmac']    # Elemento que contiene la MAC del paquete
         if not item in hosts.keys():            # Si el elemento no esta en el diccionario,
             hosts[item] = str(pkt['srcip'])     # almacena su par {MAC, IP}
+
+            switches[item] = pkt['switch']
+
             self.store_db(pkt)                  # y lo guarda en la base de datos
             print('Nuevo host detectado: ' + str(item) + ' -- Guardado en DB')
         else:                                   # Si ya estaba en el diccionario,
             self.set_on(pkt)                    # actualiza el estado a ON
-            print('Host ' +  str(item) + ' se ha reconectado -- Actualizado a ON')
 
     def store_db(self,pkt):
         """
@@ -182,7 +213,12 @@ class probe(DynamicPolicy):
             if con:    
                 con.close() # Cierra la conexión
 
+def get_network_id():
+    return network_id
 
+def set_network_id(network):
+    global network_id
+    network_id = network
 
 def packet_count_register(counts):
     """
@@ -203,11 +239,32 @@ def packet_count_register(counts):
         if(m in counts.keys()):   # Si la política se encuentra en el diccionario generado en el callback
             if(n_packets.get(host) < counts.get(m)):    # Si el contador es menor al registrado 
                 print('El host con MAC ' +  str(host) + ' e IP ' + hosts.get(host) + ' genera trafico')
-                n_packets[host] = counts.get(m)         # actualizar el valor 
+                n_packets[host] = counts.get(m)         # actualizar el valor
+
+                #print "------------------------network_id 2--------------------------"
+                #print network_id
+
+
             else:                                       # Si es menor o igual
                 print('El host con MAC ' +  str(host) + ' e IP ' + hosts.get(host) +' no genera trafico')
                 set_off(host)                           # poner el host a estado off
+
+                #print "------------------------network_id 3--------------------------"
+                #print network_id
+
                 print('El host con MAC ' +  str(host) + ' e IP ' + hosts.get(host) +' estado OFF')
+
+                #print "------------------------network_id4--------------------------"
+                #print network_id
+
+                #print id(network_id)
+
+
+
+                switch = switches.get(host)
+                send_arp(1,get_network_id(),switch,1,ip2,mac_origen_h2,ip1,mac_destino)
+                print "--------------------------ARP ENVIADO-------------------------------"
+
         # else:                     # Si por el contrario no se encuentra en el diccionario
         #     print('El host con MAC ' +  str(host) + ' e IP ' + hosts.get(host) +' no genera trafico')
 
@@ -251,7 +308,27 @@ def packet_counts():
     q = count_packets(10,['srcmac'])    # Query que cuenta los paquetes segun la MAC origen    
     q.register_callback(packet_count_register)  # Callback llamado cada 10 segundos
     return q
-        
+
+
+def send_arp(msg_type,network,switch,outport,srcip,srcmac,dstip,dstmac):
+        """
+        Función que construye un paquete ARP y lo inyecta en la red
+        """
+        arp = Packet()
+        arp = arp.modify(protocol=msg_type)
+        arp = arp.modify(ethtype=ARP_TYPE)
+        arp = arp.modify(switch=switch)
+        arp = arp.modify(inport=-1)
+        arp = arp.modify(outport=outport)
+        arp = arp.modify(srcip=srcip)
+        arp = arp.modify(srcmac=srcmac)
+        arp = arp.modify(dstip=dstip)
+        arp = arp.modify(dstmac=dstmac)
+        arp = arp.modify(raw='')
+
+        network.inject_packet(arp)
+
+
 def main():
     """
     Función principal que es llamada a la hora de ejecutar el módulo de la sonda
