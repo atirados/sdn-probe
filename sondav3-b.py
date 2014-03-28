@@ -43,22 +43,31 @@
 from pyretic.lib.corelib import *
 from pyretic.lib.std import *
 from pyretic.lib.query import *
+from collections import defaultdict
 import MySQLdb as mdb
 import sys
 import datetime
 
 # Declaración de variables globales
 
-hosts = {}      # Almacena los hosts que se conectan {MAC, IP}
+hosts   = defaultdict(list)                     # Diccionario de hosts {MAC, [IP, switch, port, state]}
+details = ['srcip', 'switch', 'inport', 'on']     # Lista de información a obtener de un paquete recibido
+
+# Punteros de acceso al diccionario
+IP      = 0
+SWITCH  = 1
+PORT    = 2
+STATUS  = 3
+
+# hosts = {}      # Almacena los hosts que se conectan {MAC, IP}
 n_packets = {}  # Almacena el numero de paquetes para cada host {MAC, Packets}
-switches = {}   # Almacena el switch asociado a cada MAC
 ip_controller = ('127.0.0.1')                   # No utilizada: Dirección localhost. Necesidad de migrar el controlador
 ip1 = IPAddr('10.0.0.101')
 ip2 = IPAddr('10.0.0.102')                      # Necesaria para pruebas hasta que se migre el controlador
 mac_origen_sw = EthAddr('ee:f3:48:30:cf:4f')
 mac_origen_h2 = EthAddr('02:fd:00:05:01:01')    # Necesaria para pruebas hasta que se migre el controlador
 mac_destino = EthAddr('ff:ff:ff:ff:ff:ff')      # ARP broadcast
-network_id = None
+network_id = None                               # Variable global que almacena los parámetros de red
 
 
 class probe(DynamicPolicy):
@@ -110,7 +119,7 @@ class probe(DynamicPolicy):
                           fwd(pkt['inport']),           # por el puerto origen, creando una nueva política
                           self.forward)                 # En caso contrario, se ejecuta la política forward
         self.update_policy()    # Actualizar la políticas del switch
-        self.save(pkt)      # Guardar la información en la base de datos
+        self.save(pkt)          # Guardar la información en la base de datos
 
     def save(self,pkt):
         """
@@ -121,14 +130,16 @@ class probe(DynamicPolicy):
         """
         item = pkt['srcmac']    # Elemento que contiene la MAC del paquete
         if not item in hosts.keys():            # Si el elemento no esta en el diccionario,
-            hosts[item] = str(pkt['srcip'])     # almacena su par {MAC, IP}
 
-            switches[item] = pkt['switch']
+            for detail in details:              # almacena la información relevante
+                hosts[item].append(pkt[detail])
 
             self.store_db(pkt)                  # y lo guarda en la base de datos
             print('Nuevo host detectado: ' + str(item) + ' -- Guardado en DB')
-        else:                                   # Si ya estaba en el diccionario,
-            self.set_on(pkt)                    # actualiza el estado a ON
+
+        else:                                           # Si ya estaba en el diccionario,
+            if(not hosts[item][STATUS] == 'off'):        # actualiza el estado a ON
+                self.set_on(pkt)
 
     def store_db(self,pkt):
         """
@@ -177,12 +188,13 @@ class probe(DynamicPolicy):
             state = 'on'
             mac_addr = str(pkt['srcmac'])
             ip_addr = str(pkt['srcip'])
+            port = pkt['inport']
             time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
             # Sentencia SQL
-            sql = "UPDATE HOSTS SET Estado = '%s' \
+            sql = "UPDATE HOSTS SET Estado = '%s', IP = '%s', Puerto = '%d', Hora = '%s' \
                     WHERE MAC = '%s'" \
-                    % (state, mac_addr)
+                    % (state, ip_addr, port, time, mac_addr)
 
             # Ejecución de la sentencia y commit
             cur.execute(sql)
@@ -221,19 +233,20 @@ def packet_count_register(counts):
         if(m in counts.keys()):   # Si la política se encuentra en el diccionario generado en el callback
 
             if(n_packets.get(host) < counts.get(m)):    # Si el contador es menor al registrado 
-                print('El host con MAC ' +  str(host) + ' e IP ' + hosts.get(host) + ' genera trafico')
+                print('El host con MAC ' +  str(host) + ' e IP ' + str(hosts.get(host)[IP]) + ' genera trafico')
                 n_packets[host] = counts.get(m)         # actualizar el valor
 
             else:                                       # Si es menor o igual
-                print('El host con MAC ' +  str(host) + ' e IP ' + hosts.get(host) +' no genera trafico')
+                print('El host con MAC ' +  str(host) + ' e IP ' + str(hosts.get(host)[IP]) + ' no genera trafico')
                 set_off(host)                           # poner el host a estado off
-                print('El host con MAC ' +  str(host) + ' e IP ' + hosts.get(host) +' estado OFF')
+                print('El host con MAC ' +  str(host) + ' e IP ' + str(hosts.get(host)[IP]) + ' estado OFF')
 
-                switch = switches.get(host)
-                arp_ipdest = IPAddr(hosts.get(host))
+                switch = hosts.get(host)[SWITCH]
+                port = hosts.get(host)[PORT]
+                arp_ipdest = hosts.get(host)[IP]
 
-                send_arp(1,get_network_id(),switch,1,ip2,mac_origen_h2,arp_ipdest,mac_destino)
-                print('ARP enviado a '+ hosts.get(host))
+                send_arp(1,get_network_id(),switch,port,ip2,mac_origen_h2,arp_ipdest,mac_destino)
+                print('ARP enviado a '+ str(hosts.get(host)[IP]))
 
 def set_off(host):
     """
