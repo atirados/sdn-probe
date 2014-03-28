@@ -49,9 +49,10 @@ import sys
 import datetime
 
 # Declaración de variables globales
-
 hosts   = defaultdict(list)                     # Diccionario de hosts {MAC, [IP, switch, port, state]}
-details = ['srcip', 'switch', 'inport', 'on']     # Lista de información a obtener de un paquete recibido
+details = ['srcip', 'switch', 'inport']   # Lista de información a obtener de un paquete recibido
+n_packets = {}                                  # Almacena el numero de paquetes para cada host {MAC, Packets}
+network_id = None                               # Variable global que almacena los parámetros de red
 
 # Punteros de acceso al diccionario
 IP      = 0
@@ -59,15 +60,14 @@ SWITCH  = 1
 PORT    = 2
 STATUS  = 3
 
-# hosts = {}      # Almacena los hosts que se conectan {MAC, IP}
-n_packets = {}  # Almacena el numero de paquetes para cada host {MAC, Packets}
+# Constantes
+REQUEST = 1
 ip_controller = ('127.0.0.1')                   # No utilizada: Dirección localhost. Necesidad de migrar el controlador
 ip1 = IPAddr('10.0.0.101')
 ip2 = IPAddr('10.0.0.102')                      # Necesaria para pruebas hasta que se migre el controlador
 mac_origen_sw = EthAddr('ee:f3:48:30:cf:4f')
 mac_origen_h2 = EthAddr('02:fd:00:05:01:01')    # Necesaria para pruebas hasta que se migre el controlador
 mac_destino = EthAddr('ff:ff:ff:ff:ff:ff')      # ARP broadcast
-network_id = None                               # Variable global que almacena los parámetros de red
 
 
 class probe(DynamicPolicy):
@@ -133,12 +133,13 @@ class probe(DynamicPolicy):
 
             for detail in details:              # almacena la información relevante
                 hosts[item].append(pkt[detail])
+                hosts[item].append('on')
 
             self.store_db(pkt)                  # y lo guarda en la base de datos
             print('Nuevo host detectado: ' + str(item) + ' -- Guardado en DB')
 
-        else:                                           # Si ya estaba en el diccionario,
-            if(not hosts[item][STATUS] == 'off'):        # actualiza el estado a ON
+        else:                                            # Si ya estaba en el diccionario,
+            if(hosts[item][STATUS] == 'off'):        # actualiza el estado a ON
                 self.set_on(pkt)
 
     def store_db(self,pkt):
@@ -160,7 +161,7 @@ class probe(DynamicPolicy):
 
             # Sentencia SQL
             sql = "INSERT INTO HOSTS(Estado, MAC, IP, Puerto, Hora, Importancia) \
-                    VALUES ('%s', '%s', '%s', '%d', '%s', '%s')" \
+                    VALUES ('%s', '%s', '%s', '%s', '%s', '%s')" \
                     % (state, mac_addr, ip_addr, port, time, value)
 
             # Ejecución de la sentencia y commit
@@ -168,7 +169,6 @@ class probe(DynamicPolicy):
             con.commit()
 
         except mdb.Error, e:
-            print "Error %d: %s" % (e.args[0], e.args[1])
             db.rollback()   # Rollback de la base de datos en caso de excepción
 
         finally:         
@@ -189,12 +189,16 @@ class probe(DynamicPolicy):
             mac_addr = str(pkt['srcmac'])
             ip_addr = str(pkt['srcip'])
             port = pkt['inport']
+
+            print "-----------------PORT TYPE---------------"
+            print type(port)
+
             time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
             # Sentencia SQL
-            sql = "UPDATE HOSTS SET Estado = '%s', IP = '%s', Puerto = '%d', Hora = '%s' \
-                    WHERE MAC = '%s'" \
-                    % (state, ip_addr, port, time, mac_addr)
+            sql = "UPDATE HOSTS SET Estado = '%s', IP = '%s', Puerto = '%s', Hora = '%s' \
+                WHERE MAC = '%s'" \
+                % (state, ip_addr, port, time, mac_addr)
 
             # Ejecución de la sentencia y commit
             cur.execute(sql)
@@ -242,10 +246,11 @@ def packet_count_register(counts):
                 print('El host con MAC ' +  str(host) + ' e IP ' + str(hosts.get(host)[IP]) + ' estado OFF')
 
                 switch = hosts.get(host)[SWITCH]
+
                 port = hosts.get(host)[PORT]
                 arp_ipdest = hosts.get(host)[IP]
 
-                send_arp(1,get_network_id(),switch,port,ip2,mac_origen_h2,arp_ipdest,mac_destino)
+                send_arp(REQUEST,get_network_id(),switch,port,ip2,mac_origen_h2,arp_ipdest,mac_destino)
                 print('ARP enviado a '+ str(hosts.get(host)[IP]))
 
 def set_off(host):
