@@ -133,7 +133,8 @@ class probe(DynamicPolicy):
 
             for detail in details:              # almacena la información relevante
                 hosts[item].append(pkt[detail])
-                hosts[item].append('on')
+            
+            hosts[item].append('on')
 
             self.store_db(pkt)                  # y lo guarda en la base de datos
             print('Nuevo host detectado: ' + str(item) + ' -- Guardado en DB')
@@ -190,13 +191,10 @@ class probe(DynamicPolicy):
             ip_addr = str(pkt['srcip'])
             port = pkt['inport']
 
-            print "-----------------PORT TYPE---------------"
-            print type(port)
-
             time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
             # Sentencia SQL
-            sql = "UPDATE HOSTS SET Estado = '%s', IP = '%s', Puerto = '%s', Hora = '%s' \
+            sql = "UPDATE HOSTS SET Estado = '%s', IP = '%s', Puerto = '%d', Hora = '%s' \
                 WHERE MAC = '%s'" \
                 % (state, ip_addr, port, time, mac_addr)
 
@@ -223,7 +221,7 @@ def packet_count_register(counts):
     Función que recibe los paquetes que ha contado el switch y los registra en 
     un diccionario asociado a la dirección MAC de cada host que actúa como contador.
     """
-    print "----counts------"
+
     print counts
 
     for host in hosts.keys():   # Recorrer el diccionario de hosts
@@ -243,15 +241,16 @@ def packet_count_register(counts):
             else:                                       # Si es menor o igual
                 print('El host con MAC ' +  str(host) + ' e IP ' + str(hosts.get(host)[IP]) + ' no genera trafico')
                 set_off(host)                           # poner el host a estado off
+                hosts[host][STATUS] = 'off'
+                
                 print('El host con MAC ' +  str(host) + ' e IP ' + str(hosts.get(host)[IP]) + ' estado OFF')
 
                 switch = hosts.get(host)[SWITCH]
-
                 port = hosts.get(host)[PORT]
                 arp_ipdest = hosts.get(host)[IP]
 
                 send_arp(REQUEST,get_network_id(),switch,port,ip2,mac_origen_h2,arp_ipdest,mac_destino)
-                print('ARP enviado a '+ str(hosts.get(host)[IP]))
+                print('ARP enviado al host con IP '+ str(hosts.get(host)[IP]))
 
 def set_off(host):
     """
