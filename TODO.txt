@@ -12,5 +12,7 @@
 	****** HECHO ******
 
 - A la hora de hacer set_off(host), comprobar que ese campo no está ya en off ---> Menos accesos a DB
+	****** HECHO ******
 
 - Modificar la parte del ARP, de forma que si el host ya está apagado no siga enviándolos. ¿¿¿Sólo 1 ARP???
+	****** HECHO ******
