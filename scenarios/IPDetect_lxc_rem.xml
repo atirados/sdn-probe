@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!--
+VNUML Root Scenario (1)
+See the tutorial/index.html document for details
+-->
+
+<vnx xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:noNamespaceSchemaLocation="/usr/share/xml/vnx/vnx-2.00.xsd">
+  <global>
+    <version>2.0</version>
+    <scenario_name>IPDetect</scenario_name>
+    <automac offset="5"/>
+    <vm_mgmt type="none"/>
+    <vm_defaults>
+        <console id="0" display="yes"/>
+        <console id="1" display="no"/>
+    </vm_defaults>
+  </global>
+
+<net name="INTNet1" mode="openvswitch" controller="tcp:10.0.0.100:6633" />
+ 
+ <vm name="INT1-CTL" type="lxc" exec_mode="lxc-attach">
+    <filesystem type="cow">/usr/share/vnx/filesystems/rootfs_lxc</filesystem>
+    <if id="1" net="INTNet1">
+      <ipv4 mask="255.255.255.0">10.0.0.100</ipv4>
+    </if>
+ </vm>
+
+ <vm name="INT1-H1" type="lxc" exec_mode="lxc-attach">
+    <filesystem type="cow">/usr/share/vnx/filesystems/rootfs_lxc</filesystem>
+    <if id="1" net="INTNet1">
+      <ipv4 mask="255.255.255.0">10.0.0.101</ipv4>
+    </if>
+ </vm>
+ <vm name="INT1-H2" type="lxc" exec_mode="lxc-attach">
+    <filesystem type="cow">/usr/share/vnx/filesystems/rootfs_lxc</filesystem>
+    <if id="1" net="INTNet1">
+      <ipv4 mask="255.255.255.0">10.0.0.102</ipv4>
+    </if>
+ </vm>
+ <vm name="INT1-H3" type="lxc" exec_mode="lxc-attach">
+    <filesystem type="cow">/usr/share/vnx/filesystems/rootfs_lxc</filesystem>
+    <if id="1" net="INTNet1">
+      <ipv4 mask="255.255.255.0">10.0.0.103</ipv4>
+    </if>
+ </vm>
+ <vm name="INT1-H4" type="lxc" exec_mode="lxc-attach">
+   <filesystem type="cow">/usr/share/vnx/filesystems/rootfs_lxc</filesystem>
+   <if id="1" net="INTNet1">
+      <ipv4 mask="255.255.255.0">10.0.0.104</ipv4>
+    </if>
+ </vm>
+ <host>
+    <hostif net="INTNet1">
+        <ipv4>10.0.0.1/24</ipv4>
+    </hostif>
+ </host>
+
+</vnx>

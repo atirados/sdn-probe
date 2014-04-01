@@ -64,7 +64,7 @@ STATUS  = 3
 REQUEST = 1
 TIMER = 10
 
-ip_controller = ('10.0.0.100')                  # No utilizada: Dirección controlador
+ip_controller = IPAddr('10.0.0.100')                  # No utilizada: Dirección controlador
 mac_origen_sw = EthAddr('ce:ea:13:07:bb:49')
 mac_destino = EthAddr('ff:ff:ff:ff:ff:ff')      # ARP broadcast
 
