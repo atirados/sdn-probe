@@ -16,3 +16,9 @@
 
 - Modificar la parte del ARP, de forma que si el host ya está apagado no siga enviándolos. ¿¿¿Sólo 1 ARP???
 	****** HECHO ******
+
+- Externalizar accesos a DB:
+	-> Con import no sirve
+	-> Con execfile() no sirve
+	-> Con subprocess.call() no sirve
+	-> Con os.system('python script.py') no sirve

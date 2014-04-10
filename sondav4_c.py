@@ -47,6 +47,7 @@ from collections import defaultdict
 import MySQLdb as mdb
 import sys
 import datetime
+import os
 
 # Declaración de variables globales
 hosts   = defaultdict(list)                     # Diccionario de hosts {MAC, [IP, switch, port, state]}
@@ -64,8 +65,8 @@ STATUS  = 3
 REQUEST = 1
 TIMER = 10
 
-ip_controller = ('10.0.0.100')                  # Dirección IP del controlador
-mac_origen_sw = EthAddr('ee:f3:48:30:cf:4f')    # Dirección MAC del switch
+ip_controller = IPAddr('10.0.0.100')                  # No utilizada: Dirección controlador
+mac_origen_sw = EthAddr('ce:ea:13:07:bb:49')
 mac_destino = EthAddr('ff:ff:ff:ff:ff:ff')      # ARP broadcast
 
 
@@ -83,16 +84,18 @@ class probe(DynamicPolicy):
         self.flood = flood()    # Política flood() predefinida en pyretic. Inunda la red mediante un STP    
         self.set_initial_state()    # Programar el switch a su estado inicial
         self.network = None
+        print '-----------------Fin __init__------------------------'
 
     def set_initial_state(self):
         """
         Función que realiza un query de la red y decide políticas en función del tráfico
         recibido, actualizando finalmente la Flow Table.
         """
-        self.query = packets(None,['srcmac','switch'])  # Query que detecta paquetes segun una política de match
+        self.query = packets(None,['srcmac'])  # Query que detecta paquetes segun una política de match
         self.query.register_callback(self.learn_new_MAC)    # Registro del callback
         self.forward = self.flood   # Política por defecto: inundar la red
         self.update_policy()    # Actualizar políticas del switch
+        print '-----------------Fin set_initial_state------------------------'
 
     def set_network(self,network):
         """
@@ -100,6 +103,7 @@ class probe(DynamicPolicy):
         """
         self.network = network
         set_network_id(self.network)
+        print '-----------------Fin set_network------------------------'
 
     def update_policy(self):
         """
@@ -107,6 +111,7 @@ class probe(DynamicPolicy):
         forward y las políticas de la query.
         """
         self.policy = self.forward + self.query     # Composición paralela de políticas
+        print '-----------------Fin update_policy------------------------'
 
     def learn_new_MAC(self,pkt):
         """
@@ -119,6 +124,7 @@ class probe(DynamicPolicy):
                           self.forward)                 # En caso contrario, se ejecuta la política forward
         self.update_policy()    # Actualizar la políticas del switch
         self.save(pkt)          # Guardar la información en la base de datos
+        print '-----------------Fin learn_new_MAC------------------------'
 
     def save(self,pkt):
         """
@@ -128,59 +134,42 @@ class probe(DynamicPolicy):
         En caso negativo, lo almacena en el diccionario y en la base de datos.
         """
         item = pkt['srcmac']    # Elemento que contiene la MAC del paquete
-        if not item in hosts.keys():            # Si el elemento no esta en el diccionario,
+        print '----------- Save 1---------'
+	if not item in hosts.keys():            # Si el elemento no esta en el diccionario,
 
             for detail in details:              # almacena la información relevante
                 hosts[item].append(pkt[detail])
-            
+            print '---------- Save 2---------'
             hosts[item].append('on')
-
+	    print '---------- Save 3---------'
             self.store_db(pkt)                  # y lo guarda en la base de datos
-            print('Nuevo host detectado: ' + str(item) + ' -- Guardado en DB')
-
+            print '---------- Save 4---------'
+	    print('Nuevo host detectado: ' + str(item) + ' -- Guardado en DB')
+	
         else:                                            # Si ya estaba en el diccionario,
             if(hosts[item][STATUS] == 'off'):        # actualiza el estado a ON
                 self.set_on(pkt)
+
+        print '-----------------Fin save------------------------'
 
     def store_db(self,pkt):
         """
         Función que recibe un paquete determinado y extrae los parámetros relevantes para
         guardarlos en la base de datos.
         """
-        try:
-            con = mdb.connect('localhost', 'root', 'mysqlpass', 'sonda');   # Conexión con la base de datos
-            cur = con.cursor()  # Creación del cursor
-            
-            # Creación de parámetros de la tabla
-            state = 'on'
-            mac_addr = str(pkt['srcmac'])
-            ip_addr = str(pkt['srcip'])
-            port = pkt['inport']
-            time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            value = 'Medio'
+        
+        print '------------- db0 --------------'
+        os.system('python /home/vnx/db_module.py')
 
-            # Sentencia SQL
-            sql = "INSERT INTO HOSTS(Estado, MAC, IP, Puerto, Hora, Importancia) \
-                    VALUES ('%s', '%s', '%s', '%s', '%s', '%s')" \
-                    % (state, mac_addr, ip_addr, port, time, value)
 
-            # Ejecución de la sentencia y commit
-            cur.execute(sql)
-            con.commit()
-
-        except mdb.Error, e:
-            db.rollback()   # Rollback de la base de datos en caso de excepción
-
-        finally:         
-            if con:    
-                con.close() # Cerrar la conexión
+        print '-----------------Fin store_db------------------------'
 
     def set_on(self,pkt):
         """
         Función que actualiza en la base de datos el estado de un host a ON
         """
         try:
-            con = mdb.connect('localhost', 'root', 'mysqlpass', 'sonda');   # Conexión con la base de datos
+            con = mdb.connect(host='10.0.0.1', port=3306, user='root', passwd='mysqlpass', db='sonda');   # Conexión con la base de datos
 
             cur = con.cursor()  # Creación del cursor
             
@@ -207,6 +196,7 @@ class probe(DynamicPolicy):
         finally:         
             if con:    
                 con.close() # Cierra la conexión
+        print '-----------------Fin set_on------------------------'
 
 def get_network_id():
     return network_id
@@ -254,13 +244,15 @@ def packet_count_register(counts):
 
                     send_arp(REQUEST,get_network_id(),switch,port,ip_controller,mac_origen_sw,arp_ipdest,mac_destino)
                     print('ARP enviado al host con IP '+ str(hosts.get(host)[IP]))
+    print '-----------------Fin packet_count_register------------------------'
 
 def set_off(host):
     """
     Función que actualiza en la base de datos el estado de un host a OFF
     """
     try:
-        con = mdb.connect('localhost', 'root', 'mysqlpass', 'sonda');   # Conexión con la base de datos
+
+        con = mdb.connect(host='10.0.0.1', port=3306, user='root', passwd='mysqlpass', db='sonda');   # Conexión con la base de datos
 
         cur = con.cursor()  # Creación del cursor
         
@@ -285,6 +277,7 @@ def set_off(host):
     finally:         
         if con:    
             con.close() # Cierra la conexión
+    print '-----------------Fin set_off------------------------'
 
 def packet_counts():
     """
@@ -295,25 +288,27 @@ def packet_counts():
     q = count_packets(TIMER,['srcmac'])    # Query que cuenta los paquetes segun la MAC origen    
     q.register_callback(packet_count_register)  # Callback llamado cada 10 segundos
     return q
+    print '-----------------Fin packet_counts------------------------'
 
 
 def send_arp(msg_type,network,switch,outport,srcip,srcmac,dstip,dstmac):
-        """
-        Función que construye un paquete ARP y lo inyecta en la red
-        """
-        arp = Packet()
-        arp = arp.modify(protocol=msg_type)
-        arp = arp.modify(ethtype=ARP_TYPE)
-        arp = arp.modify(switch=switch)
-        arp = arp.modify(inport=-1)
-        arp = arp.modify(outport=outport)
-        arp = arp.modify(srcip=srcip)
-        arp = arp.modify(srcmac=srcmac)
-        arp = arp.modify(dstip=dstip)
-        arp = arp.modify(dstmac=dstmac)
-        arp = arp.modify(raw='')
+    """
+    Función que construye un paquete ARP y lo inyecta en la red
+    """
+    arp = Packet()
+    arp = arp.modify(protocol=msg_type)
+    arp = arp.modify(ethtype=ARP_TYPE)
+    arp = arp.modify(switch=switch)
+    arp = arp.modify(inport=-1)
+    arp = arp.modify(outport=outport)
+    arp = arp.modify(srcip=srcip)
+    arp = arp.modify(srcmac=srcmac)
+    arp = arp.modify(dstip=dstip)
+    arp = arp.modify(dstmac=dstmac)
+    arp = arp.modify(raw='')
 
-        network.inject_packet(arp)
+    network.inject_packet(arp)
+    print '-----------------Fin send_arp------------------------'
 
 
 def main():

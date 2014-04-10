@@ -63,9 +63,12 @@ STATUS  = 3
 # Constantes
 REQUEST = 1
 TIMER = 10
-
-ip_controller = ('10.0.0.100')                  # Dirección IP del controlador
-mac_origen_sw = EthAddr('ee:f3:48:30:cf:4f')    # Dirección MAC del switch
+ip_controller = ('127.0.0.1')                   # No utilizada: Dirección localhost. Necesidad de migrar el controlador
+ip1 = IPAddr('10.0.0.101')
+ip2 = IPAddr('10.0.0.102')                      # Necesaria para pruebas hasta que se migre el controlador
+ipRandom = IPAddr('1.2.3.4')
+mac_origen_sw = EthAddr('ea:c3:da:17:25:42')
+mac_origen_h2 = EthAddr('02:fd:00:05:01:01')    # Necesaria para pruebas hasta que se migre el controlador
 mac_destino = EthAddr('ff:ff:ff:ff:ff:ff')      # ARP broadcast
 
 
@@ -89,7 +92,7 @@ class probe(DynamicPolicy):
         Función que realiza un query de la red y decide políticas en función del tráfico
         recibido, actualizando finalmente la Flow Table.
         """
-        self.query = packets(None,['srcmac','switch'])  # Query que detecta paquetes segun una política de match
+        self.query = packets(1,['srcmac','srcip'])  # Query que detecta paquetes segun una política de match
         self.query.register_callback(self.learn_new_MAC)    # Registro del callback
         self.forward = self.flood   # Política por defecto: inundar la red
         self.update_policy()    # Actualizar políticas del switch
@@ -138,9 +141,9 @@ class probe(DynamicPolicy):
             self.store_db(pkt)                  # y lo guarda en la base de datos
             print('Nuevo host detectado: ' + str(item) + ' -- Guardado en DB')
 
-        else:                                            # Si ya estaba en el diccionario,
-            if(hosts[item][STATUS] == 'off'):        # actualiza el estado a ON
-                self.set_on(pkt)
+        else:                                   # Si ya estaba en el diccionario,
+            hosts[item][IP] = pkt['srcip']      # actualizar campos
+            hosts[item][PORT] = pkt['inport']
 
     def store_db(self,pkt):
         """
@@ -175,38 +178,38 @@ class probe(DynamicPolicy):
             if con:    
                 con.close() # Cerrar la conexión
 
-    def set_on(self,pkt):
-        """
-        Función que actualiza en la base de datos el estado de un host a ON
-        """
-        try:
-            con = mdb.connect('localhost', 'root', 'mysqlpass', 'sonda');   # Conexión con la base de datos
+    # def set_on(self,pkt):
+    #     """
+    #     Función que actualiza en la base de datos el estado de un host a ON
+    #     """
+    #     try:
+    #         con = mdb.connect('localhost', 'root', 'mysqlpass', 'sonda');   # Conexión con la base de datos
 
-            cur = con.cursor()  # Creación del cursor
+    #         cur = con.cursor()  # Creación del cursor
             
-            # Creación de parámetros
-            state = 'on'
-            mac_addr = str(pkt['srcmac'])
-            ip_addr = str(pkt['srcip'])
-            port = pkt['inport']
+    #         # Creación de parámetros
+    #         state = 'on'
+    #         mac_addr = str(pkt['srcmac'])
+    #         ip_addr = str(pkt['srcip'])
+    #         port = pkt['inport']
 
-            time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    #         time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-            # Sentencia SQL
-            sql = "UPDATE HOSTS SET Estado = '%s', IP = '%s', Puerto = '%d', Hora = '%s' \
-                WHERE MAC = '%s'" \
-                % (state, ip_addr, port, time, mac_addr)
+    #         # Sentencia SQL
+    #         sql = "UPDATE HOSTS SET Estado = '%s', IP = '%s', Puerto = '%d', Hora = '%s' \
+    #             WHERE MAC = '%s'" \
+    #             % (state, ip_addr, port, time, mac_addr)
 
-            # Ejecución de la sentencia y commit
-            cur.execute(sql)
-            con.commit()
+    #         # Ejecución de la sentencia y commit
+    #         cur.execute(sql)
+    #         con.commit()
 
-        except mdb.Error, e:
-            db.rollback()   # Rollback de la base de datos en caso de excepción
+    #     except mdb.Error, e:
+    #         db.rollback()   # Rollback de la base de datos en caso de excepción
 
-        finally:         
-            if con:    
-                con.close() # Cierra la conexión
+    #     finally:         
+    #         if con:    
+    #             con.close() # Cierra la conexión
 
 def get_network_id():
     return network_id
@@ -236,7 +239,11 @@ def packet_count_register(counts):
             if(n_packets.get(host) < counts.get(m)):    # Si el contador es menor al registrado 
                 print('El host con MAC ' +  str(host) + ' e IP ' + str(hosts.get(host)[IP]) + ' genera trafico')
                 n_packets[host] = counts.get(m)         # actualizar el valor
-                hosts[host][STATUS] = 'on'
+                if(hosts[host][STATUS] == 'off'):
+                    set_on(host)
+                    hosts[host][STATUS] = 'on'
+                    print('El host con MAC ' +  str(host) + ' e IP ' + str(hosts.get(host)[IP]) + ' estado ON')
+
 
             else:                                       # Si es menor o igual
                 print('El host con MAC ' +  str(host) + ' e IP ' + str(hosts.get(host)[IP]) + ' no genera trafico')
@@ -252,8 +259,39 @@ def packet_count_register(counts):
                     port = hosts.get(host)[PORT]
                     arp_ipdest = hosts.get(host)[IP]
 
-                    send_arp(REQUEST,get_network_id(),switch,port,ip_controller,mac_origen_sw,arp_ipdest,mac_destino)
+                    send_arp(REQUEST,get_network_id(),switch,port,ip2,mac_origen_sw,arp_ipdest,mac_destino)
                     print('ARP enviado al host con IP '+ str(hosts.get(host)[IP]))
+
+
+def set_on(host):
+    """
+    Función que actualiza en la base de datos el estado de un host a ON
+    """
+    try:
+        con = mdb.connect('localhost', 'root', 'mysqlpass', 'sonda');
+
+        cur = con.cursor()
+
+        state = 'on'
+        mac_addr = str(host)
+        ip_addr = str(hosts.get(host)[IP])
+        port = hosts.get(host)[PORT]
+        time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+
+        sql = "UPDATE HOSTS SET Estado = '%s', IP = '%s', Puerto = '%d', Hora = '%s' \
+            WHERE MAC = '%s'" \
+            % (state, ip_addr, port, time, mac_addr)
+        
+        cur.execute(sql)
+        con.commit()
+
+    except mdb.Error, e:
+        db.rollback()
+
+    finally:
+        if con:
+            con.close()
 
 def set_off(host):
     """
@@ -263,7 +301,7 @@ def set_off(host):
         con = mdb.connect('localhost', 'root', 'mysqlpass', 'sonda');   # Conexión con la base de datos
 
         cur = con.cursor()  # Creación del cursor
-        
+
         # Creación de parámetros
         state = 'off'
         mac_addr = str(host)
