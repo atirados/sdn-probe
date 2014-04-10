@@ -39,7 +39,6 @@
 
 
 # Importar dependencias
-
 from pyretic.lib.corelib import *
 from pyretic.lib.std import *
 from pyretic.lib.query import *
@@ -61,14 +60,12 @@ PORT    = 2
 STATUS  = 3
 
 # Constantes
-REQUEST = 1
-TIMER = 10
-ip_controller = ('127.0.0.1')                   # No utilizada: Dirección localhost. Necesidad de migrar el controlador
-ip1 = IPAddr('10.0.0.101')
-ip2 = IPAddr('10.0.0.102')                      # Necesaria para pruebas hasta que se migre el controlador
-ipRandom = IPAddr('1.2.3.4')
-mac_origen_sw = EthAddr('ea:c3:da:17:25:42')
-mac_origen_h2 = EthAddr('02:fd:00:05:01:01')    # Necesaria para pruebas hasta que se migre el controlador
+REQUEST = 1     # Tipo de ARP que se quiere enviar
+TIMER = 10      # Timer que controla la comprobación de desconexiones (en segundos)
+
+# Direcciones para envío de ARP
+arp_ipsrc = ('10.0.0.1')                        # IP que recibirá las respuestas a los ARP (posibilidad de Spoofing)
+mac_origen_ctl = EthAddr('02:fd:00:05:00:01')   # MAC origen desde la que se envía el ARP
 mac_destino = EthAddr('ff:ff:ff:ff:ff:ff')      # ARP broadcast
 
 
@@ -178,6 +175,7 @@ class probe(DynamicPolicy):
             if con:    
                 con.close() # Cerrar la conexión
 
+
 def get_network_id():
     return network_id
 
@@ -226,7 +224,7 @@ def packet_count_register(counts):
                     port = hosts.get(host)[PORT]
                     arp_ipdest = hosts.get(host)[IP]
 
-                    send_arp(REQUEST,get_network_id(),switch,port,ip2,mac_origen_sw,arp_ipdest,mac_destino)
+                    send_arp(REQUEST,get_network_id(),switch,port,arp_ipsrc,mac_origen_ctl,arp_ipdest,mac_destino)
                     print('ARP enviado al host con IP '+ str(hosts.get(host)[IP]))
 
 
@@ -301,7 +299,6 @@ def packet_counts():
     q.register_callback(packet_count_register)  # Callback llamado cada 10 segundos
     return q
 
-
 def send_arp(msg_type,network,switch,outport,srcip,srcmac,dstip,dstmac):
         """
         Función que construye un paquete ARP y lo inyecta en la red
@@ -319,7 +316,6 @@ def send_arp(msg_type,network,switch,outport,srcip,srcmac,dstip,dstmac):
         arp = arp.modify(raw='')
 
         network.inject_packet(arp)
-
 
 def main():
     """

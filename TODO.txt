@@ -1,6 +1,3 @@
-- Crear una sola funcion para interactuar la DB que tome un parámetro (save, setOn, setOff) y actúe de manera diferente para cada caso.
-	*** Variables globales con numeros?? SET_ON = 1, SET_OFF = 0, SAVE = 2 
-
 - Crear un diccionario {MAC, [IP, Switch, Estado]} para reducir las consultas a DB.
 	****** HECHO ******
 	[[[[Se reduce el mean delay de los ping aproximadamente en 90 ms]]]]
@@ -17,8 +14,5 @@
 - Modificar la parte del ARP, de forma que si el host ya está apagado no siga enviándolos. ¿¿¿Sólo 1 ARP???
 	****** HECHO ******
 
-- Externalizar accesos a DB:
-	-> Con import no sirve
-	-> Con execfile() no sirve
-	-> Con subprocess.call() no sirve
-	-> Con os.system('python script.py') no sirve
+- Crear una sola funcion para interactuar la DB que tome un parámetro (setOn, setOff) y actúe de manera diferente para cada caso.
+	----> Variables globales con numeros?? SET_ON = 1, SET_OFF = 0
