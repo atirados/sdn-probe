@@ -35,6 +35,19 @@
 #   Adicionalmente, el switch es sensible a movilidad entre subredes,          #
 # registrando de igual manera estas circunstancias.                            #
 #                                                                              #
+#                                                                              #
+################################################################################
+#                                                                              #
+#   Parámetros de configuración                                                #
+#                                                                              #
+################################################################################
+#                                                                              #
+#   Deben especificarse las siguientes constantes:                             #
+#       - Dos IP fijas para el envío de ARPs                                   #
+#       - MAC origen del controlador                                           #
+#       - Temporizador de comprobación de desconexiones                        #
+#       - Nivel de logs que se desea                                           #
+#                                                                              #
 ################################################################################
 
 
@@ -48,10 +61,10 @@ import sys
 import datetime
 
 # Declaración de variables globales
-hosts   = defaultdict(list)                     # Diccionario de hosts {MAC, [IP, switch, port, state]}
+hosts   = defaultdict(list)               # Diccionario de hosts {MAC, [IP, switch, port, state]}
 details = ['srcip', 'switch', 'inport']   # Lista de información a obtener de un paquete recibido
-n_packets = {}                                  # Almacena el numero de paquetes para cada host {MAC, Packets}
-network_id = None                               # Variable global que almacena los parámetros de red
+n_packets = {}                            # Almacena el numero de paquetes para cada host {MAC, Packets}
+network_id = None                         # Variable global que almacena los parámetros de red
 
 # Punteros de acceso al diccionario
 IP      = 0
@@ -62,9 +75,11 @@ STATUS  = 3
 # Constantes
 REQUEST = 1     # Tipo de ARP que se quiere enviar
 TIMER = 10      # Timer que controla la comprobación de desconexiones (en segundos)
+VERBOSE = 1     # Nivel de logs de la sonda (0 = Ningún log, 1 = Logs completos)
 
 # Direcciones para envío de ARP
 arp_ipsrc = ('10.0.0.1')                        # IP que recibirá las respuestas a los ARP (posibilidad de Spoofing)
+arp_ipsrc2 = ('10.0.0.102')                     # Segunda dirección IP (debido a configuración interna de Pyretic)
 mac_origen_ctl = EthAddr('02:fd:00:05:00:01')   # MAC origen desde la que se envía el ARP
 mac_destino = EthAddr('ff:ff:ff:ff:ff:ff')      # ARP broadcast
 
@@ -136,7 +151,8 @@ class probe(DynamicPolicy):
             hosts[item].append('on')
 
             self.store_db(pkt)                  # y lo guarda en la base de datos
-            print('Nuevo host detectado: ' + str(item) + ' -- Guardado en DB')
+            if (VERBOSE == 1):
+                print('Nuevo host detectado: ' + str(item) + ' -- Guardado en DB')
 
         else:                                   # Si ya estaba en el diccionario,
             hosts[item][IP] = pkt['srcip']      # actualizar campos
@@ -189,7 +205,9 @@ def packet_count_register(counts):
     un diccionario asociado a la dirección MAC de cada host que actúa como contador.
     """
 
-    print counts
+    if (VERBOSE == 1):
+        print '------- Contador de paquetes -------'
+        print counts
 
     for host in hosts.keys():   # Recorrer el diccionario de hosts
         if(not host in n_packets.keys()):   # Si el host no se encuentra en el diccionario 
@@ -202,31 +220,67 @@ def packet_count_register(counts):
         if(m in counts.keys()):   # Si la política se encuentra en el diccionario generado en el callback
 
             if(n_packets.get(host) < counts.get(m)):    # Si el contador es menor al registrado 
-                print('El host con MAC ' +  str(host) + ' e IP ' + str(hosts.get(host)[IP]) + ' genera trafico')
+                
+                if (VERBOSE == 1):
+                    print('El host con MAC ' +  str(host) + ' e IP ' + str(hosts.get(host)[IP]) + ' genera trafico')
                 n_packets[host] = counts.get(m)         # actualizar el valor
+                
                 if(hosts[host][STATUS] == 'off'):
-                    set_on(host)
+                    modify_state(host,'on')
                     hosts[host][STATUS] = 'on'
-                    print('El host con MAC ' +  str(host) + ' e IP ' + str(hosts.get(host)[IP]) + ' estado ON')
+                    if (VERBOSE == 1):
+                        print('El host con MAC ' +  str(host) + ' e IP ' + str(hosts.get(host)[IP]) + ' estado ON')
 
 
             else:                                       # Si es menor o igual
-                print('El host con MAC ' +  str(host) + ' e IP ' + str(hosts.get(host)[IP]) + ' no genera trafico')
+                if (VERBOSE == 1):
+                    print('El host con MAC ' +  str(host) + ' e IP ' + str(hosts.get(host)[IP]) + ' no genera trafico')
                 
                 if(hosts[host][STATUS] == 'on'):
 
-                    set_off(host)                           # poner el host a estado off
+                    modify_state(host,'off')                           # poner el host a estado off
                     hosts[host][STATUS] = 'off'
                     
-                    print('El host con MAC ' +  str(host) + ' e IP ' + str(hosts.get(host)[IP]) + ' estado OFF')
+                    if (VERBOSE == 1):
+                        print('El host con MAC ' +  str(host) + ' e IP ' + str(hosts.get(host)[IP]) + ' estado OFF')
 
                     switch = hosts.get(host)[SWITCH]
                     port = hosts.get(host)[PORT]
                     arp_ipdest = hosts.get(host)[IP]
 
                     send_arp(REQUEST,get_network_id(),switch,port,arp_ipsrc,mac_origen_ctl,arp_ipdest,mac_destino)
-                    print('ARP enviado al host con IP '+ str(hosts.get(host)[IP]))
+                    
+                    if (VERBOSE == 1):
+                        print('ARP enviado al host con IP '+ str(hosts.get(host)[IP]))
 
+def modify_state(host,sta):
+    """
+    Función que modifica el estado de un host en la base de datos
+    """
+    try:
+        con = mdb.connect('localhost', 'root', 'mysqlpass', 'sonda');
+
+        cur = con.cursor()
+
+        state = sta
+        mac_addr = str(host)
+        ip_addr = str(hosts.get(host)[IP])
+        port = hosts.get(host)[PORT]
+        time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+        sql = "UPDATE HOSTS SET Estado = '%s', IP = '%s', Puerto = '%d', Hora = '%s' \
+            WHERE MAC = '%s'" \
+            % (state, ip_addr, port, time, mac_addr)
+        
+        cur.execute(sql)
+        con.commit()
+
+    except mdb.Error, e:
+        db.rollback()
+
+    finally:
+        if con:
+            con.close()
 
 def set_on(host):
     """
