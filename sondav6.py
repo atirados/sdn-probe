@@ -78,8 +78,8 @@ TIMER = 10      # Timer que controla la comprobación de desconexiones (en segun
 VERBOSE = 1     # Nivel de logs de la sonda (0 = Ningún log, 1 = Logs completos)
 
 # Direcciones para envío de ARP
-arp_ipsrc = ('10.0.0.1')                        # IP que recibirá las respuestas a los ARP (posibilidad de Spoofing)
-arp_ipsrc2 = ('10.0.0.102')                     # Segunda dirección IP (debido a configuración interna de Pyretic)
+arp_ipsrc = IPAddr('10.0.0.1')                        # IP que recibirá las respuestas a los ARP (posibilidad de Spoofing)
+arp_ipsrc2 = IPAddr('10.0.0.102')                     # Segunda dirección IP (debido a configuración interna de Pyretic)
 mac_origen_ctl = EthAddr('02:fd:00:05:00:01')   # MAC origen desde la que se envía el ARP
 mac_destino = EthAddr('ff:ff:ff:ff:ff:ff')      # ARP broadcast
 
@@ -247,8 +247,10 @@ def packet_count_register(counts):
                     switch = hosts.get(host)[SWITCH]
                     port = hosts.get(host)[PORT]
                     arp_ipdest = hosts.get(host)[IP]
-
-                    send_arp(REQUEST,get_network_id(),switch,port,arp_ipsrc,mac_origen_ctl,arp_ipdest,mac_destino)
+                    if(arp_ipdest == arp_ipsrc):        # Resolución de conflicto debido a configuración interna del controlador
+                        send_arp(REQUEST,get_network_id(),switch,port,arp_ipsrc2,mac_origen_ctl,arp_ipdest,mac_destino)
+                    else:
+                        send_arp(REQUEST,get_network_id(),switch,port,arp_ipsrc,mac_origen_ctl,arp_ipdest,mac_destino)
                     
                     if (VERBOSE == 1):
                         print('ARP enviado al host con IP '+ str(hosts.get(host)[IP]))
