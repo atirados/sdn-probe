@@ -247,6 +247,7 @@ def packet_count_register(counts):
                     switch = hosts.get(host)[SWITCH]
                     port = hosts.get(host)[PORT]
                     arp_ipdest = hosts.get(host)[IP]
+                    
                     if(arp_ipdest == arp_ipsrc):        # Resolución de conflicto debido a configuración interna del controlador
                         send_arp(REQUEST,get_network_id(),switch,port,arp_ipsrc2,mac_origen_ctl,arp_ipdest,mac_destino)
                     else:
