@@ -3,7 +3,7 @@
 
 ################################################################################
 #                                                                              #
-# sondav6.py                                                                   #
+# sonda.py                                                                     #
 # Author: Adrián Tirados                                                       #
 #                                                                              #
 ################################################################################
@@ -78,8 +78,8 @@ TIMER = 10      # Timer que controla la comprobación de desconexiones (en segun
 VERBOSE = 1     # Nivel de logs de la sonda (0 = Ningún log, 1 = Logs completos)
 
 # Direcciones para envío de ARP
-arp_ipsrc = IPAddr('10.0.0.1')                        # IP que recibirá las respuestas a los ARP (posibilidad de Spoofing)
-arp_ipsrc2 = IPAddr('10.0.0.102')                     # Segunda dirección IP (debido a configuración interna de Pyretic)
+arp_ipsrc = IPAddr('10.0.0.1')                  # IP que recibirá las respuestas a los ARP (posibilidad de Spoofing)
+arp_ipsrc2 = IPAddr('10.0.0.102')               # Segunda dirección IP (debido a configuración interna de Pyretic)
 mac_origen_ctl = EthAddr('02:fd:00:05:00:01')   # MAC origen desde la que se envía el ARP
 mac_destino = EthAddr('ff:ff:ff:ff:ff:ff')      # ARP broadcast
 
@@ -95,8 +95,8 @@ class probe(DynamicPolicy):
         Función preliminar que actúa como constructor.
         """
         super(probe,self).__init__()
-        self.flood = flood()    # Política flood() predefinida en pyretic. Inunda la red mediante un STP    
-        self.set_initial_state()    # Programar el switch a su estado inicial
+        self.flood = flood()            # Política flood() predefinida en pyretic. Inunda la red mediante un STP    
+        self.set_initial_state()        # Programar el switch a su estado inicial
         self.network = None
 
     def set_initial_state(self):
@@ -104,10 +104,10 @@ class probe(DynamicPolicy):
         Función que realiza un query de la red y decide políticas en función del tráfico
         recibido, actualizando finalmente la Flow Table.
         """
-        self.query = packets(1,['srcmac','srcip'])  # Query que detecta paquetes segun una política de match
+        self.query = packets(1,['srcmac','srcip'])          # Query que detecta paquetes segun una política de match
         self.query.register_callback(self.learn_new_MAC)    # Registro del callback
-        self.forward = self.flood   # Política por defecto: inundar la red
-        self.update_policy()    # Actualizar políticas del switch
+        self.forward = self.flood                           # Política por defecto: inundar la red
+        self.update_policy()                                # Actualizar políticas del switch
 
     def set_network(self,network):
         """
@@ -132,8 +132,8 @@ class probe(DynamicPolicy):
                                 switch=pkt['switch']),  # el switch es capaz de reenviar el paquete
                           fwd(pkt['inport']),           # por el puerto origen, creando una nueva política
                           self.forward)                 # En caso contrario, se ejecuta la política forward
-        self.update_policy()    # Actualizar la políticas del switch
-        self.save(pkt)          # Guardar la información en la base de datos
+        self.update_policy()                            # Actualizar la políticas del switch
+        self.save(pkt)                                  # Guardar la información en la base de datos
 
     def save(self,pkt):
         """
@@ -149,8 +149,8 @@ class probe(DynamicPolicy):
                 hosts[item].append(pkt[detail])
             
             hosts[item].append('on')
-
             self.store_db(pkt)                  # y lo guarda en la base de datos
+            
             if (VERBOSE == 1):
                 print('Nuevo host detectado: ' + str(item) + ' -- Guardado en DB')
 
@@ -165,7 +165,7 @@ class probe(DynamicPolicy):
         """
         try:
             con = mdb.connect('localhost', 'root', 'mysqlpass', 'sonda');   # Conexión con la base de datos
-            cur = con.cursor()  # Creación del cursor
+            cur = con.cursor()                                              # Creación del cursor
             
             # Creación de parámetros de la tabla
             state = 'on'
@@ -209,7 +209,7 @@ def packet_count_register(counts):
         print '------- Contador de paquetes -------'
         print counts
 
-    for host in hosts.keys():   # Recorrer el diccionario de hosts
+    for host in hosts.keys():               # Recorrer el diccionario de hosts
         if(not host in n_packets.keys()):   # Si el host no se encuentra en el diccionario 
             n_packets[host] = 0             # se añade con el contador a 0
         
@@ -223,11 +223,13 @@ def packet_count_register(counts):
                 
                 if (VERBOSE == 1):
                     print('El host con MAC ' +  str(host) + ' e IP ' + str(hosts.get(host)[IP]) + ' genera trafico')
+                
                 n_packets[host] = counts.get(m)         # actualizar el valor
                 
                 if(hosts[host][STATUS] == 'off'):
                     modify_state(host,'on')
                     hosts[host][STATUS] = 'on'
+                    
                     if (VERBOSE == 1):
                         print('El host con MAC ' +  str(host) + ' e IP ' + str(hosts.get(host)[IP]) + ' estado ON')
 
@@ -237,8 +239,7 @@ def packet_count_register(counts):
                     print('El host con MAC ' +  str(host) + ' e IP ' + str(hosts.get(host)[IP]) + ' no genera trafico')
                 
                 if(hosts[host][STATUS] == 'on'):
-
-                    modify_state(host,'off')                           # poner el host a estado off
+                    modify_state(host,'off')            # poner el host a estado off
                     hosts[host][STATUS] = 'off'
                     
                     if (VERBOSE == 1):
@@ -261,90 +262,31 @@ def modify_state(host,sta):
     Función que modifica el estado de un host en la base de datos
     """
     try:
-        con = mdb.connect('localhost', 'root', 'mysqlpass', 'sonda');
-
-        cur = con.cursor()
-
-        state = sta
-        mac_addr = str(host)
-        ip_addr = str(hosts.get(host)[IP])
-        port = hosts.get(host)[PORT]
-        time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        
-        sql = "UPDATE HOSTS SET Estado = '%s', IP = '%s', Puerto = '%d', Hora = '%s' \
-            WHERE MAC = '%s'" \
-            % (state, ip_addr, port, time, mac_addr)
-        
-        cur.execute(sql)
-        con.commit()
-
-    except mdb.Error, e:
-        db.rollback()
-
-    finally:
-        if con:
-            con.close()
-
-def set_on(host):
-    """
-    Función que actualiza en la base de datos el estado de un host a ON
-    """
-    try:
-        con = mdb.connect('localhost', 'root', 'mysqlpass', 'sonda');
-
-        cur = con.cursor()
-
-        state = 'on'
-        mac_addr = str(host)
-        ip_addr = str(hosts.get(host)[IP])
-        port = hosts.get(host)[PORT]
-        time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        
-
-        sql = "UPDATE HOSTS SET Estado = '%s', IP = '%s', Puerto = '%d', Hora = '%s' \
-            WHERE MAC = '%s'" \
-            % (state, ip_addr, port, time, mac_addr)
-        
-        cur.execute(sql)
-        con.commit()
-
-    except mdb.Error, e:
-        db.rollback()
-
-    finally:
-        if con:
-            con.close()
-
-def set_off(host):
-    """
-    Función que actualiza en la base de datos el estado de un host a OFF
-    """
-    try:
         con = mdb.connect('localhost', 'root', 'mysqlpass', 'sonda');   # Conexión con la base de datos
+        cur = con.cursor()                                              # Creación del cursor
 
-        cur = con.cursor()  # Creación del cursor
-
-        # Creación de parámetros
-        state = 'off'
+        # Creación de los parámetros
+        state = sta     # Lee la entrada
         mac_addr = str(host)
-        # ip_addr = hosts.get[host]
+        ip_addr = str(hosts.get(host)[IP])
+        port = hosts.get(host)[PORT]
         time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
+        
         # Sentencia SQL
-        sql = "UPDATE HOSTS SET Estado = '%s', Hora = '%s' \
-                WHERE MAC = '%s'" \
-                % (state, time, mac_addr)
-
-        # Ejecución de la sentencia y commit
+        sql = "UPDATE HOSTS SET Estado = '%s', IP = '%s', Puerto = '%d', Hora = '%s' \
+            WHERE MAC = '%s'" \
+            % (state, ip_addr, port, time, mac_addr)
+        
+        # Ejecución de la secuencia y commit
         cur.execute(sql)
         con.commit()
 
     except mdb.Error, e:
-        db.rollback()   # Rollback de la base de datos en caso de excepción
+        db.rollback()   # Rollback en el caso de error
 
-    finally:         
-        if con:    
-            con.close() # Cierra la conexión
+    finally:
+        if con:
+            con.close() # Cerrar la conexión
 
 def packet_counts():
     """
