@@ -1,0 +1,117 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!--
+VNUML Root Scenario (1)
+See the tutorial/index.html document for details
+-->
+
+<vnx xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:noNamespaceSchemaLocation="/usr/share/xml/vnx/vnx-2.00.xsd">
+  <global>
+    <version>2.0</version>
+    <scenario_name>IPDetect</scenario_name>
+    <automac offset="5"/>
+    <vm_mgmt type="none"/>
+    <vm_defaults>
+        <console id="0" display="yes"/>
+        <console id="1" display="no"/>
+    </vm_defaults>
+  </global>
+
+ <net name="INTNet1" mode="openvswitch" controller="tcp:192.168.100.100:6633" />
+ <net name="INTNet2" mode="openvswitch" controller="tcp:192.168.100.100:6633" />
+ <net name="INTNet3" mode="virtual_bridge" />
+ <net name="PPP"  mode="virtual_bridge" />
+   
+ <vm name="INT1-CTL" type="lxc" exec_mode="lxc-attach">
+    <filesystem type="cow">/usr/share/vnx/filesystems/rootfs_lxc</filesystem>
+    <if id="1" net="INTNet3">
+      <ipv4 mask="255.255.255.0">192.168.100.100</ipv4>
+    </if>
+    <route type="ipv4" gw="192.168.100.1">default</route>
+ </vm>
+
+ <vm name="INT1-H1" type="lxc" exec_mode="lxc-attach">
+    <filesystem type="cow">/usr/share/vnx/filesystems/rootfs_lxc</filesystem>
+    <if id="1" net="INTNet1">
+      <ipv4 mask="255.255.255.0">10.0.0.101</ipv4>
+    </if>
+    <route type="ipv4" gw="10.0.0.1">default</route>
+ </vm>
+ <vm name="INT1-H2" type="lxc" exec_mode="lxc-attach">
+    <filesystem type="cow">/usr/share/vnx/filesystems/rootfs_lxc</filesystem>
+    <if id="1" net="INTNet1">
+      <ipv4 mask="255.255.255.0">10.0.0.102</ipv4>
+    </if>
+    <route type="ipv4" gw="10.0.0.1">default</route>
+ </vm>
+ <vm name="INT1-H3" type="lxc" exec_mode="lxc-attach">
+    <filesystem type="cow">/usr/share/vnx/filesystems/rootfs_lxc</filesystem>
+    <if id="1" net="INTNet1">
+      <ipv4 mask="255.255.255.0">10.0.0.103</ipv4>
+    </if>
+    <route type="ipv4" gw="10.0.0.1">default</route>
+ </vm>
+ <vm name="INT1-H4" type="lxc" exec_mode="lxc-attach">
+   <filesystem type="cow">/usr/share/vnx/filesystems/rootfs_lxc</filesystem>
+   <if id="1" net="INTNet1">
+      <ipv4 mask="255.255.255.0">10.0.0.104</ipv4>
+    </if>
+    <route type="ipv4" gw="10.0.0.1">default</route>
+ </vm>
+
+ <vm name="INT2-H1" type="lxc" exec_mode="lxc-attach">
+    <filesystem type="cow">/usr/share/vnx/filesystems/rootfs_lxc</filesystem>
+    <if id="1" net="INTNet2">
+      <ipv4 mask="255.255.255.0">10.0.2.101</ipv4>
+    </if>
+    <route type="ipv4" gw="10.0.2.1">default</route>
+ </vm>
+ <vm name="INT2-H2" type="lxc" exec_mode="lxc-attach">
+    <filesystem type="cow">/usr/share/vnx/filesystems/rootfs_lxc</filesystem>
+    <if id="1" net="INTNet2">
+      <ipv4 mask="255.255.255.0">10.0.2.102</ipv4>
+    </if>
+    <route type="ipv4" gw="10.0.2.1">default</route>
+ </vm>
+ <vm name="INT2-H3" type="lxc" exec_mode="lxc-attach">
+    <filesystem type="cow">/usr/share/vnx/filesystems/rootfs_lxc</filesystem>
+    <if id="1" net="INTNet2">
+      <ipv4 mask="255.255.255.0">10.0.2.103</ipv4>
+    </if>
+    <route type="ipv4" gw="10.0.2.1">default</route>
+ </vm>
+
+<!-- router R2- dynamips-->
+
+ <vm name="R2" type="dynamips" subtype="3600" os="">
+    <filesystem type="cow">/usr/share/vnx/filesystems/c3640</filesystem>
+    <mem>128M</mem>
+    <console id="1" display="yes"/>
+    <if id="1" net="INTNet1" name="e0/0">
+      <ipv4>10.0.0.1/24</ipv4>
+    </if>
+    <if id="2" net="INTNet2" name="e0/1">
+      <ipv4>10.0.2.1/24</ipv4>
+    </if>
+    <if id="3" net="PPP" name="e0/2">
+      <ipv4>10.0.13.2/24</ipv4>
+    </if>
+    <route type="ipv4" gw="10.0.13.1">default</route>
+    <exec seq="brief" type="verbatim">show ip interface brief</exec>
+    <exec seq="loadcfg" type="verbatim" ostype="load">merge conf/R2/R2.conf</exec>
+ </vm>
+
+ <host>
+    <hostif net="PPP">
+      <ipv4>10.0.13.1/24</ipv4>
+    </hostif>
+    <hostif net="INTNet3">
+      <ipv4 mask="255.255.255.0">192.168.100.1</ipv4>
+    </hostif>
+    <route type="ipv4" gw="10.0.13.2">10.0.0.0/24</route>
+    <route type="ipv4" gw="10.0.13.2">10.0.2.0/24</route>
+    <forwarding type="ip"/>
+  </host>
+
+</vnx>
